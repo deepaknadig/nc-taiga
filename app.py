@@ -65,21 +65,24 @@ def config_step1():
         cal_data = []
         for cal in calendars:
             try:
-                # get_supported_components returns a list like ['VTODO', 'VEVENT']
                 supported = cal.get_supported_components()
                 if 'VTODO' in supported:
                     cal_id = str(cal.url)
                     cal_name = cal.name if cal.name else str(cal.url)
                     cal_data.append({'id': cal_id, 'name': cal_name})
             except Exception as e:
-                # Fallback if get_supported_components fails for some reason
                 logger.warning(f"Failed to check supported components for {cal.url}: {e}")
+
+        # Fallback: if no calendars explicitly reported VTODO support, list all of them
+        if not cal_data and calendars:
+            logger.info("No VTODO calendars detected. Falling back to listing all calendars.")
+            for cal in calendars:
                 cal_id = str(cal.url)
                 cal_name = cal.name if cal.name else str(cal.url)
                 cal_data.append({'id': cal_id, 'name': cal_name})
 
         if not cal_data:
-            flash("Found calendars, but none seem to support tasks (VTODO). You might need to create a Task list in Nextcloud first.", "warning")
+            flash("No calendars or task lists found in your Nextcloud account.", "warning")
 
         return render_template('config_step2.html', config=config, projects=projects, calendars=cal_data)
 
@@ -124,6 +127,10 @@ def config_step2():
                      if 'VTODO' in cal.get_supported_components():
                          cal_data.append({'id': str(cal.url), 'name': cal.name or str(cal.url)})
                  except:
+                     pass
+
+             if not cal_data and calendars:
+                 for cal in calendars:
                      cal_data.append({'id': str(cal.url), 'name': cal.name or str(cal.url)})
 
              return render_template('config_step2.html', config=config, projects=projects, calendars=cal_data)
