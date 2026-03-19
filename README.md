@@ -46,7 +46,7 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 ### Taiga Setup
 
 1. **Taiga API URL:** Usually formatted as `https://api.taiga.io` or your self-hosted URL.
-2. **Taiga Application Token:** You can generate an Application Token from your Taiga profile settings.
+2. **Taiga Application Token:** You can generate an Application Token by logging into Taiga, clicking on your profile icon (top right), navigating to **User settings > Application tokens**, filling in a name, and clicking "Create new token". Copy this token exactly as provided.
 3. **Taiga Project Slug:** The slug found in your Taiga project's URL (e.g., `myusername-myprojectname`).
 4. **Taiga User Story Ref:** The integer ID of the User Story you want tasks assigned to (e.g., `12` for US #12).
 
