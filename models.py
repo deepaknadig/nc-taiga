@@ -11,9 +11,14 @@ class Config(db.Model):
     nextcloud_task_list = db.Column(db.String(255), nullable=True)
 
     taiga_url = db.Column(db.String(255), nullable=True)
-    taiga_token = db.Column(db.String(255), nullable=True)
-    taiga_project_slug = db.Column(db.String(255), nullable=True)
-    taiga_user_story_ref = db.Column(db.Integer, nullable=True)
+    taiga_username = db.Column(db.String(255), nullable=True)
+    taiga_password = db.Column(db.String(255), nullable=True)
+
+    # Store IDs since we select from dropdowns
+    taiga_project_id = db.Column(db.Integer, nullable=True)
+    taiga_project_slug = db.Column(db.String(255), nullable=True) # useful for display/fallback
+    taiga_user_story_id = db.Column(db.Integer, nullable=True)
+    taiga_user_story_ref = db.Column(db.Integer, nullable=True) # useful for display
 
     last_sync_time = db.Column(db.DateTime, nullable=True)
     setup_time = db.Column(db.DateTime, nullable=True)

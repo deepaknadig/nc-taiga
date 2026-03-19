@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Configuration</h1>
+
+    <form method="POST" action="{{ url_for('config_step2') }}">
+        <h2>Step 2: Select Taiga Project</h2>
+
+        <div class="form-group">
+            <label for="taiga_project_id">Taiga Project</label>
+            <select id="taiga_project_id" name="taiga_project_id" style="width: 100%; padding: 0.5rem;" required>
+                <option value="" disabled selected>Select a project...</option>
+                {% for project in projects %}
+                    <option value="{{ project.id }}" data-slug="{{ project.slug }}" {% if config.taiga_project_id == project.id %}selected{% endif %}>
+                        {{ project.name }} ({{ project.slug }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <!-- Hidden input to pass the slug along -->
+        <input type="hidden" id="taiga_project_slug" name="taiga_project_slug" value="{{ config.taiga_project_slug or '' }}">
+
+        <button type="submit" onclick="document.getElementById('taiga_project_slug').value = document.getElementById('taiga_project_id').options[document.getElementById('taiga_project_id').selectedIndex].getAttribute('data-slug');">Fetch User Stories & Next Step</button>
+    </form>
+{% endblock %}

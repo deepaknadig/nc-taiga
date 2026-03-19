@@ -4,6 +4,7 @@ import logging
 
 from models import db, Config, TaskMapping, SyncLog
 from taiga import TaigaAPI
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -99,18 +100,18 @@ def update_nextcloud_task_details(config, task_uid, title, description):
         return False
 
 def get_taiga_api(config):
-    if not config.taiga_url or not config.taiga_token:
+    if not config.taiga_url or not config.taiga_username or not config.taiga_password:
         raise ValueError("Taiga configuration is incomplete.")
 
     api = TaigaAPI(host=config.taiga_url)
-    api.token = config.taiga_token
+    api.auth(username=config.taiga_username, password=config.taiga_password)
     return api
 
 def sync_nextcloud_to_taiga(app):
     with app.app_context():
         try:
             config = Config.query.first()
-            if not config or not config.nextcloud_url or not config.taiga_project_slug:
+            if not config or not config.nextcloud_url or not config.taiga_project_id:
                 return # Not fully configured yet
 
             try:
@@ -122,19 +123,19 @@ def sync_nextcloud_to_taiga(app):
 
             try:
                 taiga_api = get_taiga_api(config)
-                project = taiga_api.projects.get_by_slug(config.taiga_project_slug)
+                project = taiga_api.projects.get(config.taiga_project_id)
             except Exception as e:
-                logger.error(f"Failed to find Taiga project {config.taiga_project_slug}: {e}")
-                log_sync_status('ERROR', f"Taiga project {config.taiga_project_slug} not found.")
+                logger.error(f"Failed to find Taiga project ID {config.taiga_project_id}: {e}")
+                log_sync_status('ERROR', f"Taiga project ID {config.taiga_project_id} not found.")
                 return
 
             user_story = None
-            if config.taiga_user_story_ref:
+            if config.taiga_user_story_id:
                 try:
-                    user_story = taiga_api.user_stories.get_by_ref(project.id, config.taiga_user_story_ref)
+                    user_story = taiga_api.user_stories.get(config.taiga_user_story_id)
                 except Exception as e:
-                    logger.error(f"Failed to find User Story by ref {config.taiga_user_story_ref}: {e}")
-                    log_sync_status('ERROR', f"Taiga User Story ref {config.taiga_user_story_ref} not found.")
+                    logger.error(f"Failed to find User Story ID {config.taiga_user_story_id}: {e}")
+                    log_sync_status('ERROR', f"Taiga User Story ID {config.taiga_user_story_id} not found.")
                     return
 
             try:
@@ -193,7 +194,7 @@ def sync_nextcloud_to_taiga(app):
                         if user_story:
                             task_data["user_story"] = user_story.id
 
-                        new_taiga_task = taiga_api.tasks.create(**task_data)
+                        new_taiga_task = taiga_api.tasks.create(project=project.id, subject=title, description=description, user_story=user_story.id if user_story else None)
 
                         new_mapping = TaskMapping(nextcloud_task_uid=uid, taiga_task_id=new_taiga_task.id)
                         db.session.add(new_mapping)
@@ -241,25 +242,21 @@ def sync_nextcloud_to_taiga(app):
             logger.error(f"General sync error: {e}")
             log_sync_status('ERROR', f"General sync error: {e}")
 
-import requests
-import json
-
 def register_taiga_webhook(config, public_url):
     try:
         taiga_api = get_taiga_api(config)
-        project = taiga_api.projects.get_by_slug(config.taiga_project_slug)
-        project_id = project.id
+        project_id = config.taiga_project_id
 
         # We need the full URL to the webhook endpoint
         webhook_url = f"{public_url.rstrip('/')}/taiga-webhook"
 
+        # When using api.auth(username, password), taiga_api.token is set
         headers = {
-            "Authorization": f"Bearer {config.taiga_token}",
+            "Authorization": f"Bearer {taiga_api.token}",
             "Content-Type": "application/json"
         }
 
         # Check existing webhooks for this project
-        # Taiga REST API: /api/v1/webhooks?project=X
         taiga_base = config.taiga_url.rstrip('/')
         if not taiga_base.endswith('/api/v1'):
             taiga_api_base = f"{taiga_base}/api/v1"
