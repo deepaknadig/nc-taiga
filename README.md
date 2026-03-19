@@ -29,7 +29,7 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 1. Start the Flask application by running:
 
    ```bash
-   PYTHONPATH=$(pwd) python src/app.py
+   python app.py
    ```
 
 2. Open your web browser and navigate to `http://localhost:5000/config` to configure your Nextcloud and Taiga connection details.

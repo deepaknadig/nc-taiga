@@ -1,11 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
-from src.database import init_db
-from src.models import db, Config, SyncLog, TaskMapping
+from database import init_db
+from models import db, Config, SyncLog, TaskMapping
 import os
 
 app = Flask(__name__)
 # Absolute path to the database to avoid path issues
-db_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'instance', 'config.db')
+db_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance', 'config.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'some-secret-key-for-flask-flash-messages'
@@ -15,7 +15,7 @@ os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 init_db(app)
 
-from src.sync import mark_nextcloud_task_completed, update_nextcloud_task_details
+from sync import mark_nextcloud_task_completed, update_nextcloud_task_details
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -135,10 +135,10 @@ def taiga_webhook():
     return {"status": "ok"}, 200
 
 from apscheduler.schedulers.background import BackgroundScheduler
-import src.sync
+import sync
 
 def run_sync_job():
-    src.sync.sync_nextcloud_to_taiga(app)
+    sync.sync_nextcloud_to_taiga(app)
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=run_sync_job, trigger="interval", seconds=30)

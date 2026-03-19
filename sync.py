@@ -2,7 +2,7 @@ import caldav
 from datetime import datetime, timezone
 import logging
 
-from src.models import db, Config, TaskMapping, SyncLog
+from models import db, Config, TaskMapping, SyncLog
 from taiga import TaigaAPI
 
 logger = logging.getLogger(__name__)

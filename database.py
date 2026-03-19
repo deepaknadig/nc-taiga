@@ -1,4 +1,4 @@
-from src.models import db, Config
+from models import db, Config
 from flask import current_app
 
 def init_db(app):
