@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Add New Sync Connection</h1>
+
+    <form method="POST" action="{{ url_for('new_connection_save') }}">
+        <h2>Step 2: Select Taiga User Story</h2>
+
+        <p>Selected Nextcloud Task List: <strong>{{ nc_name }}</strong></p>
+        <p>Selected Taiga Project: <strong>{{ taiga_slug }}</strong></p>
+
+        <!-- Pass these hidden fields along -->
+        <input type="hidden" name="nextcloud_task_list_id" value="{{ nc_id }}">
+        <input type="hidden" name="nextcloud_task_list" value="{{ nc_name }}">
+        <input type="hidden" name="taiga_project_id" value="{{ taiga_id }}">
+        <input type="hidden" name="taiga_project_slug" value="{{ taiga_slug }}">
+
+        <div class="form-group">
+            <label for="taiga_user_story_id">Taiga User Story (Optional)</label>
+            <select id="taiga_user_story_id" name="taiga_user_story_id" style="width: 100%; padding: 0.5rem;">
+                <option value="" selected>Sync to Project Default (No specific User Story)</option>
+                {% for us in user_stories %}
+                    <option value="{{ us.id }}" data-ref="{{ us.ref }}">
+                        #{{ us.ref }} - {{ us.subject }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <input type="hidden" id="taiga_user_story_ref" name="taiga_user_story_ref" value="">
+
+        <button type="submit" onclick="
+            var sel = document.getElementById('taiga_user_story_id');
+            if (sel.value) {
+                document.getElementById('taiga_user_story_ref').value = sel.options[sel.selectedIndex].getAttribute('data-ref');
+            }
+        ">Save Connection</button>
+    </form>
+{% endblock %}

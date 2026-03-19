@@ -2,14 +2,6 @@
 
 {% block content %}
     <h1>Sync Status</h1>
-    <p><strong>Last Synced:</strong>
-        {% if config.last_sync_time %}
-            {{ config.last_sync_time.strftime('%Y-%m-%d %H:%M:%S UTC') }}
-        {% else %}
-            Never
-        {% endif %}
-    </p>
-
     <h2>Recent Logs</h2>
     {% if logs %}
         <table>
@@ -27,7 +19,12 @@
                         <td style="color: {% if log.status == 'SUCCESS' %}green{% else %}red{% endif %}; font-weight: bold;">
                             {{ log.status }}
                         </td>
-                        <td>{{ log.message }}</td>
+                        <td>
+                            {% if log.connection_id %}
+                                <strong>[Conn #{{ log.connection_id }}]</strong>
+                            {% endif %}
+                            {{ log.message }}
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
