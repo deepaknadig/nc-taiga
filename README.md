@@ -6,8 +6,9 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 
 - **Configuration UI:** Provide configuration interfaces with URLs, user IDs, and app passwords for both Nextcloud and Taiga. Also allows specifying the Taiga Project and User Story (US) ID.
 - **Sync Status Dashboard:** A separate web screen to check sync status and review detailed logs.
-- **Nextcloud to Taiga Sync:** Background polling of Nextcloud CalDAV (runs every 30 seconds). Whenever a new Task is created in Nextcloud (after configuration is saved), the Task is synced and attached to the configured Taiga Project and US.
-- **Taiga to Nextcloud Sync:** Via webhooks. When tasks are updated or closed in the Taiga Sprint Taskboard for a particular US, the title, description, and completion statuses are marked accordingly in Nextcloud.
+- **Bi-directional Sync:** A background polling process runs every 30 seconds to fetch tasks from Nextcloud CalDAV and Taiga.
+  - *Nextcloud to Taiga:* New tasks created in Nextcloud (after configuration is saved) are synced and attached to the configured Taiga Project and US.
+  - *Taiga to Nextcloud:* When tasks are updated or closed in the Taiga Sprint Taskboard for the configured US, the title, description, and completion statuses are marked accordingly in Nextcloud.
 
 ## Requirements
 
@@ -51,13 +52,8 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 3. **Taiga Project Slug:** The slug found in your Taiga project's URL (e.g., `myusername-myprojectname`).
 4. **Taiga User Story Ref:** The integer ID of the User Story you want tasks assigned to (e.g., `12` for US #12).
 
-### Webhook Configuration
+### Sync Mechanism
 
-To sync changes *from* Taiga *back* to Nextcloud (like task completions or title updates), the application relies on a Webhook configured in Taiga.
+The application utilizes background polling to communicate between Nextcloud and Taiga. It does **not** rely on Taiga Webhooks, completely bypassing local IP restriction errors common with self-hosted instances on the same server.
 
-**Automated Webhook Registration:**
-When you save your configuration in the Web App UI, the application will automatically connect to the Taiga API using your provided token and register a new webhook pointing to itself. It infers its own URL based on your browser request.
-
-If you ever change your domain or IP address, simply visit the configuration page again and click "Save Configuration". The application will automatically delete the old webhook and register a new one pointing to the correct address.
-
-*Note: The automatic webhook registration process works best when the Flask app and Taiga are hosted on the same server, or when the Flask application is exposed to the public internet.*
+The background job runs every 30 seconds to check for new tasks in Nextcloud and modified attributes (title, description, and completion status) for existing tasks in Taiga.

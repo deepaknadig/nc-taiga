@@ -17,7 +17,7 @@ os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 init_db(app)
 
-from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, register_taiga_webhook, get_taiga_api
+from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -113,13 +113,7 @@ def config_step3():
 
         db.session.commit()
 
-        # Register webhook
-        success, message = register_taiga_webhook(config, request.host_url)
-        if success:
-            flash(f'Configuration saved successfully! {message}', 'success')
-        else:
-            flash(f'Configuration saved, but webhook failed: {message}', 'warning')
-
+        flash('Configuration saved successfully! The background polling will now synchronize tasks.', 'success')
         return redirect(url_for('config_page'))
 
     except Exception as e:

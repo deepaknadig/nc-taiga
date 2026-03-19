@@ -43,6 +43,11 @@ def mark_nextcloud_task_completed(config, task_uid):
 
         if task_vobject:
             vtodo = task_vobject.instance.vtodo
+
+            # If already completed, don't do anything to prevent unnecessary saves
+            if hasattr(vtodo, 'status') and vtodo.status.value == 'COMPLETED':
+                return True
+
             if hasattr(vtodo, 'status'):
                 vtodo.status.value = 'COMPLETED'
             else:
@@ -74,21 +79,30 @@ def update_nextcloud_task_details(config, task_uid, title, description):
         if task_vobject:
             vtodo = task_vobject.instance.vtodo
 
+            changed = False
+
             if title:
                 if hasattr(vtodo, 'summary'):
-                    vtodo.summary.value = title
+                    if vtodo.summary.value != title:
+                        vtodo.summary.value = title
+                        changed = True
                 else:
                     vtodo.add('summary').value = title
+                    changed = True
 
             if description is not None:
                 if hasattr(vtodo, 'description'):
-                    vtodo.description.value = description
+                    if vtodo.description.value != description:
+                        vtodo.description.value = description
+                        changed = True
                 else:
                     if description:
                         vtodo.add('description').value = description
+                        changed = True
 
-            task_vobject.save()
-            log_sync_status('SUCCESS', f"Updated Nextcloud task {task_uid} details.")
+            if changed:
+                task_vobject.save()
+                log_sync_status('SUCCESS', f"Updated Nextcloud task {task_uid} details.")
             return True
         else:
             log_sync_status('ERROR', f"Task with UID {task_uid} not found in Nextcloud.")
@@ -196,22 +210,31 @@ def sync_nextcloud_to_taiga(app):
 
                         new_taiga_task = taiga_api.tasks.create(project=project.id, subject=title, description=description, user_story=user_story.id if user_story else None)
 
-                        new_mapping = TaskMapping(nextcloud_task_uid=uid, taiga_task_id=new_taiga_task.id)
+                        new_mapping = TaskMapping(
+                            nextcloud_task_uid=uid,
+                            taiga_task_id=new_taiga_task.id,
+                            last_known_taiga_subject=new_taiga_task.subject,
+                            last_known_taiga_description=new_taiga_task.description,
+                            last_known_taiga_status=new_taiga_task.is_closed
+                        )
                         db.session.add(new_mapping)
                         db.session.commit()
 
                         log_sync_status('SUCCESS', f"Synced new task '{title}' to Taiga.")
 
                     else:
+                        # We use bi-directional polling now.
+                        # Nextcloud changes win for title/description if Nextcloud was modified more recently,
+                        # but that requires full dtstamp comparison.
+                        # For now, let's just make sure Taiga isn't already closed.
                         try:
+                            # Note: t_task is fetched below in the Taiga -> NC loop.
+                            # We can just push Nextcloud's completion status here.
+
+                            # Fetch current taiga task state to see if it needs completing
                             t_task = taiga_api.tasks.get(mapping.taiga_task_id)
 
                             updated = False
-                            if t_task.subject != title or t_task.description != description:
-                                t_task.subject = title
-                                t_task.description = description
-                                t_task.update()
-                                updated = True
 
                             if is_completed and not t_task.is_closed:
                                 closed_status = None
@@ -224,9 +247,11 @@ def sync_nextcloud_to_taiga(app):
                                     t_task.status = closed_status
                                     t_task.update()
                                     updated = True
+                                    mapping.last_known_taiga_status = True
+                                    db.session.commit()
 
                             if updated:
-                                log_sync_status('SUCCESS', f"Updated mapped task '{title}' in Taiga.")
+                                log_sync_status('SUCCESS', f"Marked mapped task '{title}' as completed in Taiga.")
 
                         except Exception as e:
                              logger.error(f"Error updating existing Taiga task {mapping.taiga_task_id}: {e}")
@@ -238,58 +263,43 @@ def sync_nextcloud_to_taiga(app):
             config.last_sync_time = datetime.now(timezone.utc)
             db.session.commit()
 
+            # Now poll Taiga for updates to mapped tasks
+            try:
+                # We can fetch all tasks for the configured user story
+                if user_story:
+                    taiga_tasks = taiga_api.tasks.list(user_story=user_story.id)
+                else:
+                    taiga_tasks = taiga_api.tasks.list(project=project.id)
+
+                for t_task in taiga_tasks:
+                    mapping = TaskMapping.query.filter_by(taiga_task_id=t_task.id).first()
+                    if mapping:
+                        # Check if Taiga has changed since we last recorded its state
+                        changed = False
+
+                        if t_task.is_closed and not mapping.last_known_taiga_status:
+                            # Taiga task was closed!
+                            if mark_nextcloud_task_completed(config, mapping.nextcloud_task_uid):
+                                mapping.last_known_taiga_status = True
+                                changed = True
+
+                        if t_task.subject != mapping.last_known_taiga_subject or t_task.description != mapping.last_known_taiga_description:
+                            # Subject or description changed in Taiga
+                            if update_nextcloud_task_details(config, mapping.nextcloud_task_uid, t_task.subject, t_task.description):
+                                mapping.last_known_taiga_subject = t_task.subject
+                                mapping.last_known_taiga_description = t_task.description
+                                changed = True
+
+                        if changed:
+                            db.session.commit()
+
+            except Exception as e:
+                 logger.error(f"Error fetching tasks from Taiga: {e}")
+                 log_sync_status('ERROR', f"Error fetching tasks from Taiga: {e}")
+
+            config.taiga_last_sync_time = datetime.now(timezone.utc)
+            db.session.commit()
+
         except Exception as e:
             logger.error(f"General sync error: {e}")
             log_sync_status('ERROR', f"General sync error: {e}")
-
-def register_taiga_webhook(config, public_url):
-    try:
-        taiga_api = get_taiga_api(config)
-        project_id = config.taiga_project_id
-
-        # We need the full URL to the webhook endpoint
-        webhook_url = f"{public_url.rstrip('/')}/taiga-webhook"
-
-        # When using api.auth(username, password), taiga_api.token is set
-        headers = {
-            "Authorization": f"Bearer {taiga_api.token}",
-            "Content-Type": "application/json"
-        }
-
-        # Check existing webhooks for this project
-        taiga_base = config.taiga_url.rstrip('/')
-        if not taiga_base.endswith('/api/v1'):
-            taiga_api_base = f"{taiga_base}/api/v1"
-        else:
-            taiga_api_base = taiga_base
-
-        # Add a timeout so it does not hang if Taiga API is unresponsive
-        res = requests.get(f"{taiga_api_base}/webhooks?project={project_id}", headers=headers, timeout=10)
-
-        if res.status_code == 200:
-            webhooks = res.json()
-            for wh in webhooks:
-                if wh.get('url') == webhook_url or wh.get('name') == "Nextcloud Task Sync":
-                    del_res = requests.delete(f"{taiga_api_base}/webhooks/{wh['id']}", headers=headers, timeout=10)
-                    if del_res.status_code not in [200, 204]:
-                        logger.warning(f"Failed to delete existing Taiga webhook {wh['id']}: {del_res.text}")
-
-        # Create new webhook
-        payload = {
-            "project": project_id,
-            "url": webhook_url,
-            "name": "Nextcloud Task Sync",
-            "key": "nc-taiga-sync-secret"
-        }
-        create_res = requests.post(f"{taiga_api_base}/webhooks", json=payload, headers=headers, timeout=10)
-
-        if create_res.status_code in [201, 200]:
-            logger.info(f"Successfully registered Taiga webhook at {webhook_url}")
-            return True, "Webhook successfully registered in Taiga."
-        else:
-            logger.error(f"Failed to register Taiga webhook: {create_res.text}")
-            return False, f"Failed to register webhook in Taiga API: {create_res.text}"
-
-    except Exception as e:
-        logger.error(f"Error registering Taiga webhook: {e}")
-        return False, f"Error registering webhook: {str(e)}"
