@@ -1,5 +1,6 @@
 import caldav
 from datetime import datetime, timezone
+import pytz
 import logging
 
 from models import db, Config, TaskMapping, SyncLog
@@ -65,9 +66,9 @@ def mark_nextcloud_task_completed(config, task_uid):
                 vtodo.add('status').value = 'COMPLETED'
             # Check if completed date already exists, if not add it
             if not hasattr(vtodo, 'completed'):
-                vtodo.add('completed').value = datetime.now(timezone.utc)
+                vtodo.add('completed').value = datetime.now(pytz.utc)
             else:
-                vtodo.completed.value = datetime.now(timezone.utc)
+                vtodo.completed.value = datetime.now(pytz.utc)
             task_vobject.save()
             log_sync_status('SUCCESS', f"Marked Nextcloud task {task_uid} as COMPLETED.")
             return True
