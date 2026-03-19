@@ -240,3 +240,59 @@ def sync_nextcloud_to_taiga(app):
         except Exception as e:
             logger.error(f"General sync error: {e}")
             log_sync_status('ERROR', f"General sync error: {e}")
+
+import requests
+import json
+
+def register_taiga_webhook(config, public_url):
+    try:
+        taiga_api = get_taiga_api(config)
+        project = taiga_api.projects.get_by_slug(config.taiga_project_slug)
+        project_id = project.id
+
+        # We need the full URL to the webhook endpoint
+        webhook_url = f"{public_url.rstrip('/')}/taiga-webhook"
+
+        headers = {
+            "Authorization": f"Bearer {config.taiga_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Check existing webhooks for this project
+        # Taiga REST API: /api/v1/webhooks?project=X
+        taiga_base = config.taiga_url.rstrip('/')
+        if not taiga_base.endswith('/api/v1'):
+            taiga_api_base = f"{taiga_base}/api/v1"
+        else:
+            taiga_api_base = taiga_base
+
+        # Add a timeout so it does not hang if Taiga API is unresponsive
+        res = requests.get(f"{taiga_api_base}/webhooks?project={project_id}", headers=headers, timeout=10)
+
+        if res.status_code == 200:
+            webhooks = res.json()
+            for wh in webhooks:
+                if wh.get('url') == webhook_url or wh.get('name') == "Nextcloud Task Sync":
+                    del_res = requests.delete(f"{taiga_api_base}/webhooks/{wh['id']}", headers=headers, timeout=10)
+                    if del_res.status_code not in [200, 204]:
+                        logger.warning(f"Failed to delete existing Taiga webhook {wh['id']}: {del_res.text}")
+
+        # Create new webhook
+        payload = {
+            "project": project_id,
+            "url": webhook_url,
+            "name": "Nextcloud Task Sync",
+            "key": "nc-taiga-sync-secret"
+        }
+        create_res = requests.post(f"{taiga_api_base}/webhooks", json=payload, headers=headers, timeout=10)
+
+        if create_res.status_code in [201, 200]:
+            logger.info(f"Successfully registered Taiga webhook at {webhook_url}")
+            return True, "Webhook successfully registered in Taiga."
+        else:
+            logger.error(f"Failed to register Taiga webhook: {create_res.text}")
+            return False, f"Failed to register webhook in Taiga API: {create_res.text}"
+
+    except Exception as e:
+        logger.error(f"Error registering Taiga webhook: {e}")
+        return False, f"Error registering webhook: {str(e)}"

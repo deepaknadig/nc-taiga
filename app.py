@@ -15,7 +15,7 @@ os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 init_db(app)
 
-from sync import mark_nextcloud_task_completed, update_nextcloud_task_details
+from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, register_taiga_webhook
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +50,15 @@ def config_page():
 
             db.session.commit()
             flash('Configuration saved successfully!', 'success')
+
+            # Automatically register webhook in Taiga
+            # request.host_url gives us e.g. "http://localhost:5000/" or public address
+            success, message = register_taiga_webhook(config, request.host_url)
+            if success:
+                flash(message, 'success')
+            else:
+                flash(message, 'warning')
+
         except ValueError:
             flash('User Story Ref must be an integer.', 'error')
         except Exception as e:
@@ -88,16 +97,11 @@ def taiga_webhook():
 
     data = payload.get('data', {})
 
-    # Only process tasks in the configured user story if a US is set
-    us_id = None
-    user_story = data.get('user_story')
-    if isinstance(user_story, dict):
-        us_id = user_story.get('id')
-    else:
-        us_id = user_story
-
-    if config.taiga_user_story_ref and us_id != config.taiga_user_story_ref:
-         pass # Let's try to fetch from Taiga Task Mapping to ensure it's a tracked task
+    # The webhook payload might contain the User Story ID, but often the
+    # reference we configured (`config.taiga_user_story_ref`) is a ref string/number,
+    # not the internal ID. Rather than relying on potentially mismatched US IDs
+    # from the webhook, we solely rely on our TaskMapping database to determine
+    # if this is a task we are actively syncing.
 
     taiga_task_id = data.get('id')
     if not taiga_task_id:
