@@ -52,9 +52,11 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 
 ### Webhook Configuration
 
-To sync changes *from* Taiga *back* to Nextcloud (like task completions or title updates), you must configure a Webhook in Taiga:
+To sync changes *from* Taiga *back* to Nextcloud (like task completions or title updates), the application relies on a Webhook configured in Taiga.
 
-1. In your Taiga Project, go to **Settings > Integrations > Webhooks**.
-2. Add a new Webhook.
-3. Set the Payload URL to `http://<your-flask-app-address>:5000/taiga-webhook`
-4. Ensure it sends payloads on task updates.
+**Automated Webhook Registration:**
+When you save your configuration in the Web App UI, the application will automatically connect to the Taiga API using your provided token and register a new webhook pointing to itself. It infers its own URL based on your browser request.
+
+If you ever change your domain or IP address, simply visit the configuration page again and click "Save Configuration". The application will automatically delete the old webhook and register a new one pointing to the correct address.
+
+*Note: The automatic webhook registration process works best when the Flask app and Taiga are hosted on the same server, or when the Flask application is exposed to the public internet.*
