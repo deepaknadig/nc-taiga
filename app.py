@@ -61,12 +61,25 @@ def config_step1():
         principal = client.principal()
         calendars = principal.calendars()
 
-        # We can format calendars so template can read id and name easily
+        # Filter only calendars that support VTODO (tasks)
         cal_data = []
         for cal in calendars:
-            cal_id = str(cal.url)
-            cal_name = cal.name if cal.name else str(cal.url)
-            cal_data.append({'id': cal_id, 'name': cal_name})
+            try:
+                # get_supported_components returns a list like ['VTODO', 'VEVENT']
+                supported = cal.get_supported_components()
+                if 'VTODO' in supported:
+                    cal_id = str(cal.url)
+                    cal_name = cal.name if cal.name else str(cal.url)
+                    cal_data.append({'id': cal_id, 'name': cal_name})
+            except Exception as e:
+                # Fallback if get_supported_components fails for some reason
+                logger.warning(f"Failed to check supported components for {cal.url}: {e}")
+                cal_id = str(cal.url)
+                cal_name = cal.name if cal.name else str(cal.url)
+                cal_data.append({'id': cal_id, 'name': cal_name})
+
+        if not cal_data:
+            flash("Found calendars, but none seem to support tasks (VTODO). You might need to create a Task list in Nextcloud first.", "warning")
 
         return render_template('config_step2.html', config=config, projects=projects, calendars=cal_data)
 
@@ -105,7 +118,13 @@ def config_step2():
 
              client = get_caldav_client(config)
              calendars = client.principal().calendars()
-             cal_data = [{'id': str(cal.url), 'name': cal.name or str(cal.url)} for cal in calendars]
+             cal_data = []
+             for cal in calendars:
+                 try:
+                     if 'VTODO' in cal.get_supported_components():
+                         cal_data.append({'id': str(cal.url), 'name': cal.name or str(cal.url)})
+                 except:
+                     cal_data.append({'id': str(cal.url), 'name': cal.name or str(cal.url)})
 
              return render_template('config_step2.html', config=config, projects=projects, calendars=cal_data)
         except:
