@@ -211,15 +211,31 @@ def sync_nextcloud_to_taiga(app):
                            continue
 
                         logger.info(f"Creating new Taiga task for Nextcloud task {uid}")
+
+                        # Find the default/first open task status for the project
+                        new_status_id = None
+                        if hasattr(project, 'task_statuses') and project.task_statuses:
+                            for status in project.task_statuses:
+                                if not status.is_closed:
+                                    new_status_id = status.id
+                                    break
+                            if not new_status_id:
+                                new_status_id = project.task_statuses[0].id
+
+                        if not new_status_id:
+                            logger.error("Could not find a valid task status in the Taiga project to create the task.")
+                            continue
+
                         task_data = {
                             "project": project.id,
                             "subject": title,
                             "description": description,
+                            "status": new_status_id
                         }
                         if user_story:
                             task_data["user_story"] = user_story.id
 
-                        new_taiga_task = taiga_api.tasks.create(project=project.id, subject=title, description=description, user_story=user_story.id if user_story else None)
+                        new_taiga_task = taiga_api.tasks.create(**task_data)
 
                         new_mapping = TaskMapping(
                             nextcloud_task_uid=uid,
