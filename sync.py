@@ -298,9 +298,13 @@ def sync_nextcloud_to_taiga(app):
                 else:
                     taiga_tasks = taiga_api.tasks.list(project=project.id)
 
-                for t_task in taiga_tasks:
-                    mapping = TaskMapping.query.filter_by(taiga_task_id=t_task.id).first()
+                for t_task_summary in taiga_tasks:
+                    mapping = TaskMapping.query.filter_by(taiga_task_id=t_task_summary.id).first()
                     if mapping:
+                        # The .list() method returns lightweight objects without descriptions
+                        # We must fetch the full object to check for description updates
+                        t_task = taiga_api.tasks.get(t_task_summary.id)
+
                         # Check if Taiga has changed since we last recorded its state
                         changed = False
 
