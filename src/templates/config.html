@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Configuration</h1>
+    <form method="POST">
+        <h2>Nextcloud Settings</h2>
+        <div class="form-group">
+            <label for="nextcloud_url">Nextcloud CalDAV URL (e.g. https://your-server/remote.php/dav/)</label>
+            <input type="url" id="nextcloud_url" name="nextcloud_url" value="{{ config.nextcloud_url or '' }}" required>
+        </div>
+        <div class="form-group">
+            <label for="nextcloud_username">Nextcloud User ID</label>
+            <input type="text" id="nextcloud_username" name="nextcloud_username" value="{{ config.nextcloud_username or '' }}" required>
+        </div>
+        <div class="form-group">
+            <label for="nextcloud_app_password">Nextcloud App Password</label>
+            <input type="password" id="nextcloud_app_password" name="nextcloud_app_password" value="{{ config.nextcloud_app_password or '' }}" required>
+        </div>
+        <div class="form-group">
+            <label for="nextcloud_task_list">Nextcloud Task List Name</label>
+            <input type="text" id="nextcloud_task_list" name="nextcloud_task_list" value="{{ config.nextcloud_task_list or '' }}" required>
+        </div>
+
+        <h2>Taiga Settings</h2>
+        <div class="form-group">
+            <label for="taiga_url">Taiga API URL (e.g. https://api.taiga.io)</label>
+            <input type="url" id="taiga_url" name="taiga_url" value="{{ config.taiga_url or 'https://api.taiga.io' }}" required>
+        </div>
+        <div class="form-group">
+            <label for="taiga_token">Taiga Application Token</label>
+            <input type="password" id="taiga_token" name="taiga_token" value="{{ config.taiga_token or '' }}" required>
+        </div>
+        <div class="form-group">
+            <label for="taiga_project_slug">Taiga Project Slug (e.g. myuser-myproject)</label>
+            <input type="text" id="taiga_project_slug" name="taiga_project_slug" value="{{ config.taiga_project_slug or '' }}" required>
+        </div>
+        <div class="form-group">
+            <label for="taiga_user_story_ref">Taiga User Story Ref (Integer ID, e.g. 12)</label>
+            <input type="number" id="taiga_user_story_ref" name="taiga_user_story_ref" value="{{ config.taiga_user_story_ref or '' }}" required>
+        </div>
+
+        <button type="submit">Save Configuration</button>
+    </form>
+{% endblock %}
