@@ -26,18 +26,29 @@ def get_caldav_client(config):
     )
     return client
 
-def get_task_list(client, list_name):
+def get_task_list(client, config):
     principal = client.principal()
     calendars = principal.calendars()
+
+    # Try to find by ID first, then fallback to name
+    target_id = config.nextcloud_task_list_id
+    target_name = config.nextcloud_task_list
+
     for calendar in calendars:
-        if calendar.name == list_name:
+        if target_id and str(calendar.url) == target_id:
             return calendar
-    raise ValueError(f"Task list '{list_name}' not found.")
+
+    # Fallback to name match
+    for calendar in calendars:
+        if calendar.name == target_name or str(calendar.url) == target_name:
+            return calendar
+
+    raise ValueError(f"Task list '{target_name}' not found.")
 
 def mark_nextcloud_task_completed(config, task_uid):
     try:
         client = get_caldav_client(config)
-        calendar = get_task_list(client, config.nextcloud_task_list)
+        calendar = get_task_list(client, config)
 
         task_vobject = calendar.todo_by_uid(task_uid)
 
@@ -72,7 +83,7 @@ def mark_nextcloud_task_completed(config, task_uid):
 def update_nextcloud_task_details(config, task_uid, title, description):
     try:
         client = get_caldav_client(config)
-        calendar = get_task_list(client, config.nextcloud_task_list)
+        calendar = get_task_list(client, config)
 
         task_vobject = calendar.todo_by_uid(task_uid)
 
@@ -130,7 +141,7 @@ def sync_nextcloud_to_taiga(app):
 
             try:
                 client = get_caldav_client(config)
-                calendar = get_task_list(client, config.nextcloud_task_list)
+                calendar = get_task_list(client, config)
             except Exception as e:
                 log_sync_status('ERROR', f"Failed to connect to Nextcloud: {e}")
                 return

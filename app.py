@@ -17,7 +17,7 @@ os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 init_db(app)
 
-from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api
+from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api, get_caldav_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,7 +41,6 @@ def config_step1():
     config.nextcloud_url = request.form['nextcloud_url']
     config.nextcloud_username = request.form['nextcloud_username']
     config.nextcloud_app_password = request.form['nextcloud_app_password']
-    config.nextcloud_task_list = request.form['nextcloud_task_list']
 
     config.taiga_url = request.form['taiga_url']
     config.taiga_username = request.form['taiga_username']
@@ -49,22 +48,31 @@ def config_step1():
 
     db.session.commit()
 
-    # Try to connect and fetch projects
+    # Try to connect and fetch data
     try:
+        # Fetch Taiga projects
         api = get_taiga_api(config)
         projects = api.projects.list()
-
-        # We need a fallback if list() fails or user isn't assigned properly,
-        # but usually .list() gets projects the user is a member of.
-        # Alternatively api.projects.list(member=api.me().id)
         if not projects:
-            flash("Logged in successfully, but no projects found for this user.", "warning")
+            flash("Logged in to Taiga successfully, but no projects found.", "warning")
 
-        return render_template('config_step2.html', config=config, projects=projects)
+        # Fetch Nextcloud calendars
+        client = get_caldav_client(config)
+        principal = client.principal()
+        calendars = principal.calendars()
+
+        # We can format calendars so template can read id and name easily
+        cal_data = []
+        for cal in calendars:
+            cal_id = str(cal.url)
+            cal_name = cal.name if cal.name else str(cal.url)
+            cal_data.append({'id': cal_id, 'name': cal_name})
+
+        return render_template('config_step2.html', config=config, projects=projects, calendars=cal_data)
 
     except Exception as e:
-        logger.error(f"Taiga Auth Error: {e}")
-        flash(f"Failed to authenticate with Taiga: {e}", "error")
+        logger.error(f"Auth Error: {e}")
+        flash(f"Failed to authenticate with Nextcloud or Taiga: {e}", "error")
         return redirect(url_for('config_page'))
 
 @app.route('/config/step2', methods=['POST'])
@@ -72,6 +80,9 @@ def config_step2():
     config = Config.query.first()
 
     try:
+        config.nextcloud_task_list_id = request.form.get('nextcloud_task_list_id')
+        config.nextcloud_task_list = request.form.get('nextcloud_task_list')
+
         project_id = int(request.form.get('taiga_project_id'))
         project_slug = request.form.get('taiga_project_slug')
 
@@ -87,11 +98,16 @@ def config_step2():
 
     except Exception as e:
         flash(f"Error fetching user stories: {e}", "error")
-        # Need to re-fetch projects if we go back
+        # Need to re-fetch data if we go back
         try:
              api = get_taiga_api(config)
              projects = api.projects.list()
-             return render_template('config_step2.html', config=config, projects=projects)
+
+             client = get_caldav_client(config)
+             calendars = client.principal().calendars()
+             cal_data = [{'id': str(cal.url), 'name': cal.name or str(cal.url)} for cal in calendars]
+
+             return render_template('config_step2.html', config=config, projects=projects, calendars=cal_data)
         except:
              return redirect(url_for('config_page'))
 
@@ -184,4 +200,4 @@ scheduler.add_job(func=run_sync_job, trigger="interval", seconds=30)
 scheduler.start()
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, host='0.0.0.0', use_reloader=False)
+    app.run(debug=True, port=5001, host='0.0.0.0', use_reloader=False)

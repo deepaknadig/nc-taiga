@@ -19,10 +19,6 @@
             <label for="nextcloud_app_password">Nextcloud App Password</label>
             <input type="password" id="nextcloud_app_password" name="nextcloud_app_password" value="{{ config.nextcloud_app_password or '' }}" required>
         </div>
-        <div class="form-group">
-            <label for="nextcloud_task_list">Nextcloud Task List Name</label>
-            <input type="text" id="nextcloud_task_list" name="nextcloud_task_list" value="{{ config.nextcloud_task_list or '' }}" required>
-        </div>
 
         <h3>Taiga Settings</h3>
         <div class="form-group">
@@ -38,6 +34,6 @@
             <input type="password" id="taiga_password" name="taiga_password" value="{{ config.taiga_password or '' }}" required>
         </div>
 
-        <button type="submit">Connect to Taiga & Next Step</button>
+        <button type="submit">Connect & Next Step</button>
     </form>
 {% endblock %}

@@ -9,6 +9,7 @@ class Config(db.Model):
     nextcloud_username = db.Column(db.String(255), nullable=True)
     nextcloud_app_password = db.Column(db.String(255), nullable=True)
     nextcloud_task_list = db.Column(db.String(255), nullable=True)
+    nextcloud_task_list_id = db.Column(db.String(255), nullable=True)
 
     taiga_url = db.Column(db.String(255), nullable=True)
     taiga_username = db.Column(db.String(255), nullable=True)
