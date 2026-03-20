@@ -23,7 +23,6 @@ class SyncConnection(db.Model):
     taiga_user_story_id = db.Column(db.Integer, nullable=True) # can be null if syncing whole project
     taiga_user_story_ref = db.Column(db.Integer, nullable=True)
 
-    setup_time = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     last_sync_time = db.Column(db.DateTime, nullable=True)
 
 class TaskMapping(db.Model):
