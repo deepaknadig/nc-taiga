@@ -16,24 +16,37 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 - A self-hosted Nextcloud instance with the Tasks app installed.
 - A self-hosted Taiga instance with API access.
 
-## Installation
+## Installation & Running
+
+### Using Docker Compose (Recommended)
 
 1. Clone this repository.
-2. Install the required Python packages using `pip`:
+2. Open `docker-compose.yml` and optionally configure your global Nextcloud and Taiga credentials in the `environment` section.
+3. Build and start the container in the background:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. The application uses a local volume (`./instance`) to persist your SQLite database and Sync Connections across restarts.
+5. Open your web browser and navigate to `http://localhost:5001/config`.
+
+### Running Locally (Without Docker)
+
+1. Clone this repository.
+2. Install the required Python packages:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-## Running the Application
-
-1. Start the Flask application by running:
+3. Start the Flask application by running:
 
    ```bash
    python app.py
    ```
 
-2. Open your web browser and navigate to `http://localhost:5001/config` to configure your Nextcloud and Taiga connection details.
+4. Open your web browser and navigate to `http://localhost:5001/config` to manage your connections.
 
 ## Configuration Details
 

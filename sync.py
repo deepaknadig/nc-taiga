@@ -64,11 +64,16 @@ def mark_nextcloud_task_completed(config, connection, task_uid):
                 vtodo.status.value = 'COMPLETED'
             else:
                 vtodo.add('status').value = 'COMPLETED'
+            # To fix vobject's `Unable to guess TZID for tzinfo UTC` error,
+            # we must use a strictly timezone-aware pytz object like this:
+            completed_dt = datetime.now(pytz.utc)
+
             # Check if completed date already exists, if not add it
             if not hasattr(vtodo, 'completed'):
-                vtodo.add('completed').value = datetime.now(pytz.utc)
+                vtodo.add('completed').value = completed_dt
             else:
-                vtodo.completed.value = datetime.now(pytz.utc)
+                vtodo.completed.value = completed_dt
+
             task_vobject.save()
             log_sync_status('SUCCESS', f"Marked Nextcloud task {task_uid} as COMPLETED.", connection_id=connection.id)
             return True
@@ -288,6 +293,7 @@ def sync_nextcloud_to_taiga(app):
                             log_sync_status('SUCCESS', f"Synced new task '{title}' to Taiga.", connection_id=connection.id)
 
                         else:
+                            # Sync Nextcloud -> Taiga (Updates & Completions)
                             try:
                                 t_task = taiga_api.tasks.get(mapping.taiga_task_id)
 
@@ -307,8 +313,21 @@ def sync_nextcloud_to_taiga(app):
                                         mapping.last_known_taiga_status = True
                                         db.session.commit()
 
+                                # Also push Nextcloud title/description edits -> Taiga
+                                if title != mapping.last_known_taiga_subject or description != mapping.last_known_taiga_description:
+                                    # Nextcloud fields differ from what we last saw in Taiga, so we assume Nextcloud was modified.
+                                    # In a true bi-directional sync with no Webhooks, we'd need Last Modified timestamps,
+                                    # but assuming Nextcloud wins when the mapping cache is stale is sufficient.
+                                    t_task.subject = title
+                                    t_task.description = description
+                                    t_task.update()
+                                    updated = True
+                                    mapping.last_known_taiga_subject = title
+                                    mapping.last_known_taiga_description = description
+                                    db.session.commit()
+
                                 if updated:
-                                    log_sync_status('SUCCESS', f"Marked mapped task '{title}' as completed in Taiga.", connection_id=connection.id)
+                                    log_sync_status('SUCCESS', f"Updated mapped task '{title}' in Taiga.", connection_id=connection.id)
 
                             except Exception as e:
                                  logger.error(f"Error updating existing Taiga task {mapping.taiga_task_id}: {e}")
