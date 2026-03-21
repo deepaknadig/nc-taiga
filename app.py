@@ -146,52 +146,6 @@ def status_page():
     logs = SyncLog.query.order_by(SyncLog.timestamp.desc()).limit(50).all()
     return render_template('status.html', config=config, connections=connections, logs=logs)
 
-@app.route('/taiga-webhook', methods=['POST'])
-def taiga_webhook():
-    config = GlobalConfig.query.first()
-    if not config or not config.taiga_project_slug:
-        return {"status": "ignored", "message": "Taiga project not configured"}, 200
-
-    payload = request.json
-    if not payload:
-        return {"status": "error", "message": "Invalid JSON"}, 400
-
-    action = payload.get('action')
-    obj_type = payload.get('type')
-
-    if obj_type != 'task':
-        return {"status": "ignored", "message": "Not a task"}, 200
-
-    data = payload.get('data', {})
-
-    taiga_task_id = data.get('id')
-    if not taiga_task_id:
-        return {"status": "error", "message": "No task ID in payload"}, 400
-
-    mapping = TaskMapping.query.filter_by(taiga_task_id=taiga_task_id).first()
-    if not mapping:
-        return {"status": "ignored", "message": "Unmapped task"}, 200
-
-    if action == 'change':
-        change = payload.get('change', {})
-        diff = change.get('diff', {})
-
-        status_changed = 'status' in diff
-        if status_changed:
-            is_closed = data.get('is_closed', False)
-            if is_closed:
-                mark_nextcloud_task_completed(config, mapping.nextcloud_task_uid)
-
-        title_changed = 'subject' in diff
-        desc_changed = 'description_diff' in diff or 'description' in diff
-
-        if title_changed or desc_changed:
-            new_title = data.get('subject')
-            new_desc = data.get('description')
-            update_nextcloud_task_details(config, mapping.nextcloud_task_uid, new_title, new_desc)
-
-    return {"status": "ok"}, 200
-
 from apscheduler.schedulers.background import BackgroundScheduler
 import sync
 
