@@ -400,12 +400,20 @@ def sync_nextcloud_to_taiga(app):
                             # Create a new task in Nextcloud
                             logger.info(f"Creating new Nextcloud task for Taiga task '{t_task.subject}'")
                             try:
-                                new_nc_event = calendar.save_todo(
-                                    summary=t_task.subject,
-                                    description=t_task.description or ""
-                                )
+                                import vobject
+                                import uuid
 
-                                new_uid = new_nc_event.instance.vtodo.uid.value
+                                v = vobject.iCalendar()
+                                v.add('vtodo')
+                                v.vtodo.add('summary').value = t_task.subject
+                                v.vtodo.add('description').value = t_task.description or ""
+
+                                new_uid = str(uuid.uuid4())
+                                v.vtodo.add('uid').value = new_uid
+                                v.vtodo.add('dtstamp').value = datetime.now(pytz.utc)
+
+                                ical_str = v.serialize()
+                                new_nc_event = calendar.save_todo(ical=ical_str)
 
                                 new_mapping = TaskMapping(
                                     connection_id=connection.id,
