@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Add New Sync Connection</h1>
+
+    <form method="POST" action="{{ url_for('new_connection_step2') }}">
+        <h2>Step 1: Select Task List & Project</h2>
+
+        <div class="form-group">
+            <label for="nextcloud_task_list_id">Nextcloud Task List</label>
+            <select id="nextcloud_task_list_id" name="nextcloud_task_list_id" style="width: 100%; padding: 0.5rem;" required>
+                <option value="" disabled selected>Select a Task List...</option>
+                {% for cal in calendars %}
+                    <option value="{{ cal.id }}" data-name="{{ cal.name }}">{{ cal.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <input type="hidden" id="nextcloud_task_list" name="nextcloud_task_list" value="">
+
+        <div class="form-group">
+            <label for="taiga_project_id">Taiga Project</label>
+            <select id="taiga_project_id" name="taiga_project_id" style="width: 100%; padding: 0.5rem;" required>
+                <option value="" disabled selected>Select a project...</option>
+                {% for project in projects %}
+                    <option value="{{ project.id }}" data-slug="{{ project.slug }}">{{ project.name }} ({{ project.slug }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <input type="hidden" id="taiga_project_slug" name="taiga_project_slug" value="">
+
+        <button type="submit" onclick="document.getElementById('taiga_project_slug').value = document.getElementById('taiga_project_id').options[document.getElementById('taiga_project_id').selectedIndex].getAttribute('data-slug'); document.getElementById('nextcloud_task_list').value = document.getElementById('nextcloud_task_list_id').options[document.getElementById('nextcloud_task_list_id').selectedIndex].getAttribute('data-name');">Next Step: Select User Story</button>
+    </form>
+{% endblock %}

@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: nextcloud-taiga-sync
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./instance:/app/instance
+    environment:
+      # Optional: Pre-configure global credentials
+      - NEXTCLOUD_URL=https://your-nextcloud.com/remote.php/dav/
+      - NEXTCLOUD_USERNAME=your-username
+      - NEXTCLOUD_APP_PASSWORD=your-app-password
+
+      - TAIGA_URL=https://api.taiga.io
+      - TAIGA_USERNAME=your-username
+      - TAIGA_PASSWORD=your-password
+    restart: unless-stopped

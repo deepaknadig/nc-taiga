@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Dashboard</h1>
+
+    <h2>Global Credentials</h2>
+    <form method="POST" action="{{ url_for('save_global_config') }}">
+        <div style="display: flex; gap: 2rem;">
+            <div style="flex: 1;">
+                <h3>Nextcloud Settings</h3>
+                <div class="form-group">
+                    <label>Nextcloud CalDAV URL</label>
+                    <input type="url" name="nextcloud_url" value="{{ config.nextcloud_url or '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Nextcloud User ID</label>
+                    <input type="text" name="nextcloud_username" value="{{ config.nextcloud_username or '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Nextcloud App Password</label>
+                    <input type="password" name="nextcloud_app_password" value="{{ config.nextcloud_app_password or '' }}" required>
+                </div>
+            </div>
+
+            <div style="flex: 1;">
+                <h3>Taiga Settings</h3>
+                <div class="form-group">
+                    <label>Taiga API URL</label>
+                    <input type="url" name="taiga_url" value="{{ config.taiga_url or 'https://api.taiga.io' }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Taiga Username / Email</label>
+                    <input type="text" name="taiga_username" value="{{ config.taiga_username or '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Taiga Password</label>
+                    <input type="password" name="taiga_password" value="{{ config.taiga_password or '' }}" required>
+                </div>
+            </div>
+        </div>
+        <button type="submit">Save Credentials</button>
+    </form>
+
+    <hr style="margin: 2rem 0;">
+
+    <h2>Sync Connections</h2>
+    {% if connections %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Nextcloud Task List</th>
+                    <th>Taiga Project / User Story</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for conn in connections %}
+                    <tr>
+                        <td>{{ conn.nextcloud_task_list }}</td>
+                        <td>
+                            {{ conn.taiga_project_slug }}
+                            {% if conn.taiga_user_story_ref %}
+                                <br><small>US #{{ conn.taiga_user_story_ref }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('delete_connection', conn_id=conn.id) }}" onsubmit="return confirm('Are you sure you want to delete this connection? Task mappings will be lost.');">
+                                <button type="submit" style="background-color: #dc3545;">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No active sync connections.</p>
+    {% endif %}
+
+    <br>
+    <a href="{{ url_for('new_connection_step1') }}" style="display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px;">Add New Sync Connection</a>
+
+{% endblock %}
