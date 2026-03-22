@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Sync Status</h1>
+    <h2>Recent Logs</h2>
+    {% if logs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Time (UTC)</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                    <tr>
+                        <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td style="color: {% if log.status == 'SUCCESS' %}green{% else %}red{% endif %}; font-weight: bold;">
+                            {{ log.status }}
+                        </td>
+                        <td>
+                            {% if log.connection_id %}
+                                <strong>[Conn #{{ log.connection_id }}]</strong>
+                            {% endif %}
+                            {{ log.message }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No sync logs available.</p>
+    {% endif %}
+{% endblock %}
