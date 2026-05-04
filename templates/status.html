@@ -2,7 +2,16 @@
 
 {% block content %}
     <h1>Sync Status</h1>
-    <h2>Recent Logs</h2>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+        <h2 style="margin: 0;">Recent Logs <small style="font-size: 0.6em; color: #888;">(last 50)</small></h2>
+        {% if logs %}
+        <form method="POST" action="{{ url_for('clear_logs') }}" onsubmit="return confirm('Clear all sync logs?');">
+            <button type="submit" style="background-color: #6c757d;">Clear Logs</button>
+        </form>
+        {% endif %}
+    </div>
+
     {% if logs %}
         <table>
             <thead>
@@ -15,8 +24,8 @@
             <tbody>
                 {% for log in logs %}
                     <tr>
-                        <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                        <td style="color: {% if log.status == 'SUCCESS' %}green{% else %}red{% endif %}; font-weight: bold;">
+                        <td style="white-space: nowrap;">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td style="color: {% if log.status == 'SUCCESS' %}green{% else %}red{% endif %}; font-weight: bold; white-space: nowrap;">
                             {{ log.status }}
                         </td>
                         <td>

@@ -9,6 +9,13 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Tracks the last connectivity check for Nextcloud and Taiga.
+# Updated at the start of every sync cycle.
+connection_status = {
+    'nextcloud': {'ok': None, 'last_checked': None, 'error': None},
+    'taiga':     {'ok': None, 'last_checked': None, 'error': None},
+}
+
 def log_sync_status(status, message, connection_id=None):
     try:
         log = SyncLog(status=status, message=message, timestamp=datetime.now(timezone.utc), connection_id=connection_id)
@@ -31,7 +38,6 @@ def get_task_list(client, connection):
     principal = client.principal()
     calendars = principal.calendars()
 
-    # Try to find by ID first, then fallback to name
     target_id = connection.nextcloud_task_list_id
     target_name = connection.nextcloud_task_list
 
@@ -39,7 +45,6 @@ def get_task_list(client, connection):
         if target_id and str(calendar.url) == target_id:
             return calendar
 
-    # Fallback to name match
     for calendar in calendars:
         if calendar.name == target_name or str(calendar.url) == target_name:
             return calendar
@@ -56,7 +61,6 @@ def mark_nextcloud_task_completed(config, connection, task_uid):
         if task_vobject:
             vtodo = task_vobject.instance.vtodo
 
-            # If already completed, don't do anything to prevent unnecessary saves
             if hasattr(vtodo, 'status') and vtodo.status.value == 'COMPLETED':
                 return True
 
@@ -68,7 +72,6 @@ def mark_nextcloud_task_completed(config, connection, task_uid):
             # we must use a strictly timezone-aware pytz object like this:
             completed_dt = datetime.now(pytz.utc)
 
-            # Check if completed date already exists, if not add it
             if not hasattr(vtodo, 'completed'):
                 vtodo.add('completed').value = completed_dt
             else:
@@ -130,6 +133,14 @@ def update_nextcloud_task_details(config, connection, task_uid, title, descripti
         log_sync_status('ERROR', f"Error updating task in Nextcloud: {e}", connection_id=connection.id)
         return False
 
+def delete_nextcloud_task(config, connection, task_uid):
+    """Delete a VTODO from Nextcloud by UID. Raises on failure."""
+    client = get_caldav_client(config)
+    calendar = get_task_list(client, connection)
+    task_vobject = calendar.todo_by_uid(task_uid)
+    if task_vobject:
+        task_vobject.delete()
+
 def get_taiga_api(config):
     if not config.taiga_url or not config.taiga_username or not config.taiga_password:
         raise ValueError("Taiga configuration is incomplete.")
@@ -143,17 +154,31 @@ def sync_nextcloud_to_taiga(app):
         try:
             config = GlobalConfig.query.first()
             if not config or not config.nextcloud_url:
-                return # Global config missing
+                return
 
             connections = SyncConnection.query.all()
             if not connections:
-                return # Nothing to sync
+                return
 
+            now = datetime.now(timezone.utc)
+
+            # Test Nextcloud connectivity
             try:
                 client = get_caldav_client(config)
-                taiga_api = get_taiga_api(config)
+                client.principal()
+                connection_status['nextcloud'].update({'ok': True, 'last_checked': now, 'error': None})
             except Exception as e:
-                log_sync_status('ERROR', f"Failed to connect to APIs: {e}")
+                connection_status['nextcloud'].update({'ok': False, 'last_checked': now, 'error': str(e)})
+                log_sync_status('ERROR', f"Failed to connect to Nextcloud: {e}")
+                return
+
+            # Test Taiga connectivity
+            try:
+                taiga_api = get_taiga_api(config)
+                connection_status['taiga'].update({'ok': True, 'last_checked': now, 'error': None})
+            except Exception as e:
+                connection_status['taiga'].update({'ok': False, 'last_checked': now, 'error': str(e)})
+                log_sync_status('ERROR', f"Failed to connect to Taiga: {e}")
                 return
 
             for connection in connections:
@@ -185,8 +210,6 @@ def sync_nextcloud_to_taiga(app):
                     log_sync_status('ERROR', f"Failed to fetch tasks from Nextcloud: {e}", connection_id=connection.id)
                     continue
 
-                # Pre-fetch existing Taiga tasks for this project/US to avoid duplicating them
-                # when the local SQLite database is wiped or on first run.
                 try:
                     if user_story:
                         existing_taiga_tasks = taiga_api.tasks.list(user_story=user_story.id)
@@ -196,6 +219,7 @@ def sync_nextcloud_to_taiga(app):
                     logger.error(f"Failed to pre-fetch Taiga tasks for deduplication: {e}")
                     existing_taiga_tasks = []
 
+                # ── Phase 1: Nextcloud → Taiga (new tasks and updates) ──────────────
                 for nc_task in nextcloud_tasks:
                     try:
                         vtodo = nc_task.instance.vtodo
@@ -213,7 +237,6 @@ def sync_nextcloud_to_taiga(app):
                             is_completed = True
 
                         if not mapping:
-                            # Before creating, check if this task already exists in Taiga by matching the subject/title
                             matching_taiga_task = None
                             for t_task in existing_taiga_tasks:
                                 if t_task.subject == title:
@@ -229,7 +252,6 @@ def sync_nextcloud_to_taiga(app):
                                     last_known_taiga_subject=matching_taiga_task.subject,
                                     last_known_taiga_status=matching_taiga_task.is_closed
                                 )
-                                # Description is not in the lightweight summary object
                                 try:
                                     full_t_task = taiga_api.tasks.get(matching_taiga_task.id)
                                     new_mapping.last_known_taiga_description = full_t_task.description
@@ -244,23 +266,19 @@ def sync_nextcloud_to_taiga(app):
 
                             logger.info(f"Creating new Taiga task for Nextcloud task {uid}")
 
-                            # Find the appropriate task status for the project
                             new_status_id = None
                             if hasattr(project, 'task_statuses') and project.task_statuses:
                                 if is_completed:
-                                    # Find a closed status
                                     for status in project.task_statuses:
                                         if status.is_closed:
                                             new_status_id = status.id
                                             break
                                 else:
-                                    # Find an open status
                                     for status in project.task_statuses:
                                         if not status.is_closed:
                                             new_status_id = status.id
                                             break
 
-                                # Fallback to the first status if not found
                                 if not new_status_id:
                                     new_status_id = project.task_statuses[0].id
 
@@ -293,7 +311,7 @@ def sync_nextcloud_to_taiga(app):
                             log_sync_status('SUCCESS', f"Synced new task '{title}' to Taiga.", connection_id=connection.id)
 
                         else:
-                            # Sync Nextcloud -> Taiga (Updates & Completions)
+                            # Sync Nextcloud → Taiga updates and completions
                             try:
                                 t_task = taiga_api.tasks.get(mapping.taiga_task_id)
 
@@ -313,11 +331,8 @@ def sync_nextcloud_to_taiga(app):
                                         mapping.last_known_taiga_status = True
                                         db.session.commit()
 
-                                # Also push Nextcloud title/description edits -> Taiga
                                 if title != mapping.last_known_taiga_subject or description != mapping.last_known_taiga_description:
-                                    # Nextcloud fields differ from what we last saw in Taiga, so we assume Nextcloud was modified.
-                                    # In a true bi-directional sync with no Webhooks, we'd need Last Modified timestamps,
-                                    # but assuming Nextcloud wins when the mapping cache is stale is sufficient.
+                                    # Nextcloud fields differ from what we last saw in Taiga — assume NC was edited.
                                     t_task.subject = title
                                     t_task.description = description
                                     t_task.update()
@@ -330,21 +345,38 @@ def sync_nextcloud_to_taiga(app):
                                     log_sync_status('SUCCESS', f"Updated mapped task '{title}' in Taiga.", connection_id=connection.id)
 
                             except Exception as e:
-                                 logger.error(f"Error updating existing Taiga task {mapping.taiga_task_id}: {e}")
+                                logger.error(f"Error updating existing Taiga task {mapping.taiga_task_id}: {e}")
 
                     except Exception as e:
                         logger.error(f"Error processing Nextcloud task: {e}")
                         log_sync_status('ERROR', f"Error processing a Nextcloud task: {e}", connection_id=connection.id)
 
+                # ── Deletion: NC task removed → delete from Taiga ────────────────────
+                nc_uids = {nc_task.instance.vtodo.uid.value for nc_task in nextcloud_tasks}
+                stale_mappings = [
+                    m for m in TaskMapping.query.filter_by(connection_id=connection.id).all()
+                    if m.nextcloud_task_uid not in nc_uids
+                ]
+                for mapping in stale_mappings:
+                    try:
+                        taiga_api.tasks.delete(mapping.taiga_task_id)
+                        log_sync_status('SUCCESS', f"Deleted Taiga task #{mapping.taiga_task_id} because its Nextcloud task was removed.", connection_id=connection.id)
+                    except Exception as e:
+                        log_sync_status('ERROR', f"Failed to delete Taiga task #{mapping.taiga_task_id} after NC removal: {e}", connection_id=connection.id)
+                    db.session.delete(mapping)
+                    db.session.commit()
+
                 connection.last_sync_time = datetime.now(timezone.utc)
                 db.session.commit()
 
-                # Now poll Taiga for updates or new tasks
+                # ── Phase 2: Taiga → Nextcloud (new tasks and updates) ───────────────
                 try:
                     if user_story:
                         taiga_tasks = taiga_api.tasks.list(user_story=user_story.id)
                     else:
                         taiga_tasks = taiga_api.tasks.list(project=project.id)
+
+                    taiga_task_ids = {t.id for t in taiga_tasks}
 
                     for t_task_summary in taiga_tasks:
                         mapping = TaskMapping.query.filter_by(connection_id=connection.id, taiga_task_id=t_task_summary.id).first()
@@ -354,13 +386,11 @@ def sync_nextcloud_to_taiga(app):
                             changed = False
 
                             if t_task.is_closed and not mapping.last_known_taiga_status:
-                                # Taiga task was closed!
                                 if mark_nextcloud_task_completed(config, connection, mapping.nextcloud_task_uid):
                                     mapping.last_known_taiga_status = True
                                     changed = True
 
                             if t_task.subject != mapping.last_known_taiga_subject or t_task.description != mapping.last_known_taiga_description:
-                                # Subject or description changed in Taiga
                                 if update_nextcloud_task_details(config, connection, mapping.nextcloud_task_uid, t_task.subject, t_task.description):
                                     mapping.last_known_taiga_subject = t_task.subject
                                     mapping.last_known_taiga_description = t_task.description
@@ -369,15 +399,12 @@ def sync_nextcloud_to_taiga(app):
                             if changed:
                                 db.session.commit()
                         else:
-                            # A new task exists in Taiga that is not in our mapping database!
                             t_task = taiga_api.tasks.get(t_task_summary.id)
 
-                            # Check if it matches an existing Nextcloud task by subject to prevent duplicates
                             matching_nc_task = None
                             for nc_t in nextcloud_tasks:
                                 nc_vtodo = nc_t.instance.vtodo
                                 if hasattr(nc_vtodo, 'summary') and nc_vtodo.summary.value == t_task.subject:
-                                    # Ensure it's not already mapped to something else
                                     if not TaskMapping.query.filter_by(connection_id=connection.id, nextcloud_task_uid=nc_vtodo.uid.value).first():
                                         matching_nc_task = nc_vtodo
                                         break
@@ -397,7 +424,6 @@ def sync_nextcloud_to_taiga(app):
                                 log_sync_status('SUCCESS', f"Mapped existing Nextcloud task '{t_task.subject}' to Taiga.", connection_id=connection.id)
                                 continue
 
-                            # Create a new task in Nextcloud
                             logger.info(f"Creating new Nextcloud task for Taiga task '{t_task.subject}'")
                             try:
                                 import vobject
@@ -413,7 +439,7 @@ def sync_nextcloud_to_taiga(app):
                                 v.vtodo.add('dtstamp').value = datetime.now(pytz.utc)
 
                                 ical_str = v.serialize()
-                                new_nc_event = calendar.save_todo(ical=ical_str)
+                                calendar.save_todo(ical=ical_str)
 
                                 new_mapping = TaskMapping(
                                     connection_id=connection.id,
@@ -426,7 +452,6 @@ def sync_nextcloud_to_taiga(app):
                                 db.session.add(new_mapping)
                                 db.session.commit()
 
-                                # If it's already closed in Taiga, close it in Nextcloud
                                 if t_task.is_closed:
                                     mark_nextcloud_task_completed(config, connection, new_uid)
 
@@ -435,9 +460,23 @@ def sync_nextcloud_to_taiga(app):
                                 logger.error(f"Error creating Nextcloud task from Taiga: {e}")
                                 log_sync_status('ERROR', f"Error creating Nextcloud task from Taiga: {e}", connection_id=connection.id)
 
+                    # ── Deletion: Taiga task removed → delete from NC ─────────────────
+                    stale_mappings = [
+                        m for m in TaskMapping.query.filter_by(connection_id=connection.id).all()
+                        if m.taiga_task_id not in taiga_task_ids
+                    ]
+                    for mapping in stale_mappings:
+                        try:
+                            delete_nextcloud_task(config, connection, mapping.nextcloud_task_uid)
+                            log_sync_status('SUCCESS', f"Deleted NC task '{mapping.nextcloud_task_uid}' because its Taiga task was removed.", connection_id=connection.id)
+                        except Exception as e:
+                            log_sync_status('ERROR', f"Failed to delete NC task '{mapping.nextcloud_task_uid}' after Taiga removal: {e}", connection_id=connection.id)
+                        db.session.delete(mapping)
+                        db.session.commit()
+
                 except Exception as e:
-                     logger.error(f"Error fetching tasks from Taiga: {e}")
-                     log_sync_status('ERROR', f"Error fetching tasks from Taiga: {e}", connection_id=connection.id)
+                    logger.error(f"Error fetching tasks from Taiga: {e}")
+                    log_sync_status('ERROR', f"Error fetching tasks from Taiga: {e}", connection_id=connection.id)
 
         except Exception as e:
             logger.error(f"General sync error: {e}")

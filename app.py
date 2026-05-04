@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash
 from database import init_db
 from models import db, GlobalConfig, SyncConnection, TaskMapping, SyncLog
 import os
@@ -17,10 +17,14 @@ os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 init_db(app)
 
-from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api, get_caldav_client
+from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api, get_caldav_client, connection_status
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+@app.context_processor
+def inject_connection_status():
+    return {'connection_status': connection_status}
 
 @app.route('/')
 def index():
@@ -145,6 +149,13 @@ def status_page():
     connections = SyncConnection.query.all()
     logs = SyncLog.query.order_by(SyncLog.timestamp.desc()).limit(50).all()
     return render_template('status.html', config=config, connections=connections, logs=logs)
+
+@app.route('/logs/clear', methods=['POST'])
+def clear_logs():
+    SyncLog.query.delete()
+    db.session.commit()
+    flash("Sync logs cleared.", "success")
+    return redirect(url_for('status_page'))
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import sync

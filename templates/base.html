@@ -16,9 +16,14 @@
         .alert { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
         .alert-success { background-color: #d4edda; color: #155724; }
         .alert-error { background-color: #f8d7da; color: #721c24; }
-        nav { margin-bottom: 1.5rem; }
+        nav { margin-bottom: 1.5rem; display: flex; align-items: center; }
         nav a { margin-right: 1rem; text-decoration: none; color: #005A9C; font-weight: bold; }
         nav a:hover { text-decoration: underline; }
+        .status-indicators { margin-left: auto; font-size: 0.85em; color: #555; display: flex; gap: 1rem; }
+        .status-dot { font-size: 1.1em; }
+        .dot-ok { color: #28a745; }
+        .dot-err { color: #dc3545; }
+        .dot-unknown { color: #aaa; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #f2f2f2; }
@@ -29,6 +34,16 @@
         <nav>
             <a href="{{ url_for('config_page') }}">Configuration</a>
             <a href="{{ url_for('status_page') }}">Sync Status</a>
+            <div class="status-indicators">
+                {% set nc = connection_status.nextcloud %}
+                {% set tg = connection_status.taiga %}
+                <span title="Nextcloud: {% if nc.ok == True %}Connected ({{ nc.last_checked.strftime('%H:%M:%S') }} UTC){% elif nc.ok == False %}Error — {{ nc.error }}{% else %}Not checked yet{% endif %}">
+                    NC <span class="status-dot {% if nc.ok == True %}dot-ok{% elif nc.ok == False %}dot-err{% else %}dot-unknown{% endif %}">●</span>
+                </span>
+                <span title="Taiga: {% if tg.ok == True %}Connected ({{ tg.last_checked.strftime('%H:%M:%S') }} UTC){% elif tg.ok == False %}Error — {{ tg.error }}{% else %}Not checked yet{% endif %}">
+                    Taiga <span class="status-dot {% if tg.ok == True %}dot-ok{% elif tg.ok == False %}dot-err{% else %}dot-unknown{% endif %}">●</span>
+                </span>
+            </div>
         </nav>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
