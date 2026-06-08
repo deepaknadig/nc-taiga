@@ -2,6 +2,7 @@ import caldav
 from datetime import datetime, timezone
 import pytz
 import logging
+import time
 
 from models import db, GlobalConfig, SyncConnection, TaskMapping, SyncLog
 from taiga import TaigaAPI
@@ -9,12 +10,48 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+CONNECT_MAX_RETRIES = 3
+CONNECT_RETRY_DELAY = 5  # seconds between retries
+
 # Tracks the last connectivity check for Nextcloud and Taiga.
 # Updated at the start of every sync cycle.
 connection_status = {
-    'nextcloud': {'ok': None, 'last_checked': None, 'error': None},
-    'taiga':     {'ok': None, 'last_checked': None, 'error': None},
+    'nextcloud': {'ok': None, 'last_checked': None, 'error': None, 'label': 'Unknown', 'retries': 0},
+    'taiga':     {'ok': None, 'last_checked': None, 'error': None, 'label': 'Unknown', 'retries': 0},
 }
+
+def _connect_with_retry(connect_fn, service_name, max_retries=CONNECT_MAX_RETRIES, retry_delay=CONNECT_RETRY_DELAY):
+    """
+    Call connect_fn() up to max_retries times with retry_delay seconds between attempts.
+    Logs each retry and the final outcome. Returns (result, retries_used) on success,
+    or raises the last exception after all attempts are exhausted.
+    """
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = connect_fn()
+            if attempt > 1:
+                msg = f"{service_name}: connection re-established after {attempt - 1} retry(ies)."
+                logger.info(msg)
+                log_sync_status('SUCCESS', msg)
+            else:
+                logger.info(f"{service_name}: connected successfully.")
+            return result, attempt - 1
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                msg = (
+                    f"{service_name}: connection attempt {attempt}/{max_retries} failed — {e}. "
+                    f"Retrying in {retry_delay}s..."
+                )
+                logger.warning(msg)
+                log_sync_status('ERROR', msg)
+                time.sleep(retry_delay)
+            else:
+                msg = f"{service_name}: unavailable after {max_retries} attempt(s) — {e}."
+                logger.error(msg)
+                log_sync_status('ERROR', msg)
+    raise last_error
 
 def log_sync_status(status, message, connection_id=None):
     try:
@@ -162,23 +199,38 @@ def sync_nextcloud_to_taiga(app):
 
             now = datetime.now(timezone.utc)
 
-            # Test Nextcloud connectivity
+            # Test Nextcloud connectivity (with retries)
             try:
-                client = get_caldav_client(config)
-                client.principal()
-                connection_status['nextcloud'].update({'ok': True, 'last_checked': now, 'error': None})
+                def _nc_connect():
+                    c = get_caldav_client(config)
+                    c.principal()
+                    return c
+                client, nc_retries = _connect_with_retry(_nc_connect, 'Nextcloud')
+                nc_label = 'Connected' if nc_retries == 0 else f'Reconnected (after {nc_retries} {"retry" if nc_retries == 1 else "retries"})'
+                connection_status['nextcloud'].update({
+                    'ok': True, 'last_checked': now, 'error': None,
+                    'label': nc_label, 'retries': nc_retries,
+                })
             except Exception as e:
-                connection_status['nextcloud'].update({'ok': False, 'last_checked': now, 'error': str(e)})
-                log_sync_status('ERROR', f"Failed to connect to Nextcloud: {e}")
+                connection_status['nextcloud'].update({
+                    'ok': False, 'last_checked': now, 'error': str(e),
+                    'label': 'Unavailable', 'retries': CONNECT_MAX_RETRIES,
+                })
                 return
 
-            # Test Taiga connectivity
+            # Test Taiga connectivity (with retries)
             try:
-                taiga_api = get_taiga_api(config)
-                connection_status['taiga'].update({'ok': True, 'last_checked': now, 'error': None})
+                taiga_api, tg_retries = _connect_with_retry(lambda: get_taiga_api(config), 'Taiga')
+                tg_label = 'Connected' if tg_retries == 0 else f'Reconnected (after {tg_retries} {"retry" if tg_retries == 1 else "retries"})'
+                connection_status['taiga'].update({
+                    'ok': True, 'last_checked': now, 'error': None,
+                    'label': tg_label, 'retries': tg_retries,
+                })
             except Exception as e:
-                connection_status['taiga'].update({'ok': False, 'last_checked': now, 'error': str(e)})
-                log_sync_status('ERROR', f"Failed to connect to Taiga: {e}")
+                connection_status['taiga'].update({
+                    'ok': False, 'last_checked': now, 'error': str(e),
+                    'label': 'Unavailable', 'retries': CONNECT_MAX_RETRIES,
+                })
                 return
 
             for connection in connections:

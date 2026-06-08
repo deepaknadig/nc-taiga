@@ -19,11 +19,20 @@
         nav { margin-bottom: 1.5rem; display: flex; align-items: center; }
         nav a { margin-right: 1rem; text-decoration: none; color: #005A9C; font-weight: bold; }
         nav a:hover { text-decoration: underline; }
-        .status-indicators { margin-left: auto; font-size: 0.85em; color: #555; display: flex; gap: 1rem; }
-        .status-dot { font-size: 1.1em; }
-        .dot-ok { color: #28a745; }
+        .status-indicators { margin-left: auto; display: flex; gap: 0.6rem; align-items: center; }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 0.35rem;
+            padding: 0.25rem 0.65rem; border-radius: 999px;
+            font-size: 0.78em; font-weight: 600; white-space: nowrap;
+            border: 1px solid transparent;
+        }
+        .badge-ok  { background: #d1f5d3; color: #1a6b2a; border-color: #a3dfaa; }
+        .badge-err { background: #fde0e0; color: #8b1a1a; border-color: #f5a5a5; }
+        .badge-unknown { background: #ebebeb; color: #666; border-color: #ccc; }
+        .status-dot { font-size: 0.7em; }
+        .dot-ok  { color: #28a745; }
         .dot-err { color: #dc3545; }
-        .dot-unknown { color: #aaa; }
+        .dot-unknown { color: #999; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #f2f2f2; }
@@ -37,11 +46,19 @@
             <div class="status-indicators">
                 {% set nc = connection_status.nextcloud %}
                 {% set tg = connection_status.taiga %}
-                <span title="Nextcloud: {% if nc.ok == True %}Connected ({{ nc.last_checked.strftime('%H:%M:%S') }} UTC){% elif nc.ok == False %}Error — {{ nc.error }}{% else %}Not checked yet{% endif %}">
-                    NC <span class="status-dot {% if nc.ok == True %}dot-ok{% elif nc.ok == False %}dot-err{% else %}dot-unknown{% endif %}">●</span>
+                {% set nc_class = 'badge-ok' if nc.ok == True else ('badge-err' if nc.ok == False else 'badge-unknown') %}
+                {% set tg_class = 'badge-ok' if tg.ok == True else ('badge-err' if tg.ok == False else 'badge-unknown') %}
+                {% set nc_dot   = 'dot-ok'  if nc.ok == True else ('dot-err'  if nc.ok == False else 'dot-unknown') %}
+                {% set tg_dot   = 'dot-ok'  if tg.ok == True else ('dot-err'  if tg.ok == False else 'dot-unknown') %}
+                <span class="status-badge {{ nc_class }}"
+                      title="Nextcloud{% if nc.last_checked %} — last checked {{ nc.last_checked.strftime('%H:%M:%S') }} UTC{% endif %}{% if nc.ok == False %}: {{ nc.error }}{% endif %}{% if nc.retries > 0 %} ({{ nc.retries }} retr{{ 'y' if nc.retries == 1 else 'ies' }}){% endif %}">
+                    <span class="status-dot {{ nc_dot }}">●</span>
+                    Nextcloud: {{ nc.label }}
                 </span>
-                <span title="Taiga: {% if tg.ok == True %}Connected ({{ tg.last_checked.strftime('%H:%M:%S') }} UTC){% elif tg.ok == False %}Error — {{ tg.error }}{% else %}Not checked yet{% endif %}">
-                    Taiga <span class="status-dot {% if tg.ok == True %}dot-ok{% elif tg.ok == False %}dot-err{% else %}dot-unknown{% endif %}">●</span>
+                <span class="status-badge {{ tg_class }}"
+                      title="Taiga{% if tg.last_checked %} — last checked {{ tg.last_checked.strftime('%H:%M:%S') }} UTC{% endif %}{% if tg.ok == False %}: {{ tg.error }}{% endif %}{% if tg.retries > 0 %} ({{ tg.retries }} retr{{ 'y' if tg.retries == 1 else 'ies' }}){% endif %}">
+                    <span class="status-dot {{ tg_dot }}">●</span>
+                    Taiga: {{ tg.label }}
                 </span>
             </div>
         </nav>

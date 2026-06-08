@@ -164,7 +164,7 @@ def run_sync_job():
     sync.sync_nextcloud_to_taiga(app)
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=run_sync_job, trigger="interval", seconds=30)
+scheduler.add_job(func=run_sync_job, trigger="interval", seconds=30, max_instances=1)
 scheduler.start()
 
 if __name__ == '__main__':
