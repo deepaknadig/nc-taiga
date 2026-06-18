@@ -14,11 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Ensure the instance directory exists for the SQLite database
-RUN mkdir -p /app/instance && chown -R 1000:1000 /app/instance
-
-# Switch to non-root user
-USER 1000
+# Ensure the instance directory exists for the SQLite database.
+# Runs as root so the directory is always writable regardless of how the
+# host volume is created (Docker auto-creates host dirs as root).
+RUN mkdir -p /app/instance
 
 EXPOSE 5001
 
@@ -29,5 +28,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
          sys.exit(0 if r.status == 200 else 1)"
 
 # Single worker keeps APScheduler to one instance.
-# Timeout is set above the worst-case retry window (3 retries x 5s x 2 services = 30s).
-CMD ["gunicorn", "--workers", "1", "--threads", "2", "--bind", "0.0.0.0:5001", "--timeout", "120", "app:app"]
+# Timeout exceeds the worst-case retry window (3 retries x 5s x 2 services = 30s).
+CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:5001", "--timeout", "120", "app:app"]

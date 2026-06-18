@@ -15,7 +15,13 @@ app.config['SECRET_KEY'] = 'some-secret-key-for-flask-flash-messages'
 # Ensure the instance folder exists
 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-init_db(app)
+try:
+    init_db(app)
+except Exception as e:
+    import sys
+    print(f"FATAL: could not initialise database at {db_path}: {e}", file=sys.stderr)
+    print("Check that the process has write permission to the instance directory.", file=sys.stderr)
+    sys.exit(1)
 
 from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api, get_caldav_client, connection_status, sync_state
 import sync as _sync_module
