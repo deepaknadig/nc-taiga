@@ -26,12 +26,13 @@
             font-size: 0.78em; font-weight: 600; white-space: nowrap;
             border: 1px solid transparent;
         }
-        .badge-ok  { background: #d1f5d3; color: #1a6b2a; border-color: #a3dfaa; }
-        .badge-err { background: #fde0e0; color: #8b1a1a; border-color: #f5a5a5; }
-        .badge-unknown { background: #ebebeb; color: #666; border-color: #ccc; }
+        .badge-ok      { background: #d1f5d3; color: #1a6b2a; border-color: #a3dfaa; }
+        .badge-err     { background: #fde0e0; color: #8b1a1a; border-color: #f5a5a5; }
+        .badge-unknown { background: #ebebeb; color: #666;    border-color: #ccc; }
+        .badge-timing  { background: #e8f0fe; color: #1a3a6b; border-color: #aac0f0; cursor: default; }
         .status-dot { font-size: 0.7em; }
-        .dot-ok  { color: #28a745; }
-        .dot-err { color: #dc3545; }
+        .dot-ok      { color: #28a745; }
+        .dot-err     { color: #dc3545; }
         .dot-unknown { color: #999; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; }
@@ -60,8 +61,48 @@
                     <span class="status-dot {{ tg_dot }}">●</span>
                     Taiga: {{ tg.label }}
                 </span>
+                <span class="status-badge badge-timing" id="sync-timing-badge"
+                      title="Sync runs every {{ sync_interval }}s. Page reloads automatically.">
+                    ↻ <span id="last-sync-ago">…</span> · <span id="sync-countdown">{{ sync_interval }}</span>s
+                </span>
             </div>
         </nav>
+
+        <script>
+        (function () {
+            var lastSyncISO = {{ (last_sync_time.isoformat() | tojson) if last_sync_time else 'null' }};
+            var interval    = {{ sync_interval }};
+            var countdown   = interval;
+
+            function fmtAgo(secs) {
+                if (secs < 5)    return 'just now';
+                if (secs < 60)   return secs + 's ago';
+                if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+                return Math.floor(secs / 3600) + 'h ago';
+            }
+
+            function tick() {
+                // Update "last sync" age
+                var agoEl = document.getElementById('last-sync-ago');
+                if (agoEl) {
+                    if (lastSyncISO) {
+                        var secs = Math.floor((Date.now() - new Date(lastSyncISO).getTime()) / 1000);
+                        agoEl.textContent = fmtAgo(secs);
+                    } else {
+                        agoEl.textContent = 'pending';
+                    }
+                }
+
+                // Update countdown and reload when it hits zero
+                countdown--;
+                var cdEl = document.getElementById('sync-countdown');
+                if (cdEl) cdEl.textContent = Math.max(countdown, 0);
+                if (countdown <= 0) { location.reload(); }
+            }
+
+            setInterval(tick, 1000);
+        })();
+        </script>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}

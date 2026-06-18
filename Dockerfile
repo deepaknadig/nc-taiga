@@ -22,4 +22,10 @@ USER 1000
 
 EXPOSE 5001
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c \
+        "import urllib.request, sys; \
+         r = urllib.request.urlopen('http://localhost:5001/healthz', timeout=5); \
+         sys.exit(0 if r.status == 200 else 1)"
+
 CMD ["python", "app.py"]

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from database import init_db
 from models import db, GlobalConfig, SyncConnection, TaskMapping, SyncLog
 import os
@@ -17,14 +17,21 @@ os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
 init_db(app)
 
-from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api, get_caldav_client, connection_status
+from sync import mark_nextcloud_task_completed, update_nextcloud_task_details, get_taiga_api, get_caldav_client, connection_status, sync_state
+import sync as _sync_module
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+SYNC_INTERVAL_SECONDS = 30
+
 @app.context_processor
 def inject_connection_status():
-    return {'connection_status': connection_status}
+    return {
+        'connection_status': connection_status,
+        'last_sync_time': _sync_module.sync_state['last_sync_time'],
+        'sync_interval': SYNC_INTERVAL_SECONDS,
+    }
 
 @app.route('/')
 def index():
@@ -149,6 +156,10 @@ def status_page():
     connections = SyncConnection.query.all()
     logs = SyncLog.query.order_by(SyncLog.timestamp.desc()).limit(50).all()
     return render_template('status.html', config=config, connections=connections, logs=logs)
+
+@app.route('/healthz')
+def healthz():
+    return jsonify({'status': 'ok'})
 
 @app.route('/logs/clear', methods=['POST'])
 def clear_logs():

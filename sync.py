@@ -20,6 +20,9 @@ connection_status = {
     'taiga':     {'ok': None, 'last_checked': None, 'error': None, 'label': 'Unknown', 'retries': 0},
 }
 
+# Updated after each complete sync cycle completes without a top-level error.
+sync_state = {'last_sync_time': None}
+
 def _connect_with_retry(connect_fn, service_name, max_retries=CONNECT_MAX_RETRIES, retry_delay=CONNECT_RETRY_DELAY):
     """
     Call connect_fn() up to max_retries times with retry_delay seconds between attempts.
@@ -199,10 +202,13 @@ def sync_nextcloud_to_taiga(app):
 
             now = datetime.now(timezone.utc)
 
-            # Test Nextcloud connectivity (with retries)
+            # Test Nextcloud connectivity (with retries).
+            # Re-queries GlobalConfig on each attempt so that credential updates
+            # made in the UI during a retry window are picked up immediately.
             try:
                 def _nc_connect():
-                    c = get_caldav_client(config)
+                    fresh = GlobalConfig.query.first()
+                    c = get_caldav_client(fresh)
                     c.principal()
                     return c
                 client, nc_retries = _connect_with_retry(_nc_connect, 'Nextcloud')
@@ -218,9 +224,13 @@ def sync_nextcloud_to_taiga(app):
                 })
                 return
 
-            # Test Taiga connectivity (with retries)
+            # Test Taiga connectivity (with retries).
+            # Same DB re-query pattern ensures updated passwords are used on retry.
             try:
-                taiga_api, tg_retries = _connect_with_retry(lambda: get_taiga_api(config), 'Taiga')
+                def _tg_connect():
+                    fresh = GlobalConfig.query.first()
+                    return get_taiga_api(fresh)
+                taiga_api, tg_retries = _connect_with_retry(_tg_connect, 'Taiga')
                 tg_label = 'Connected' if tg_retries == 0 else f'Reconnected (after {tg_retries} {"retry" if tg_retries == 1 else "retries"})'
                 connection_status['taiga'].update({
                     'ok': True, 'last_checked': now, 'error': None,
@@ -529,6 +539,8 @@ def sync_nextcloud_to_taiga(app):
                 except Exception as e:
                     logger.error(f"Error fetching tasks from Taiga: {e}")
                     log_sync_status('ERROR', f"Error fetching tasks from Taiga: {e}", connection_id=connection.id)
+
+            sync_state['last_sync_time'] = datetime.now(timezone.utc)
 
         except Exception as e:
             logger.error(f"General sync error: {e}")
