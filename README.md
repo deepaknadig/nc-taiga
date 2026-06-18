@@ -1,14 +1,20 @@
 # Nextcloud-Taiga Task Sync Web App
 
-This is a Python Flask web application designed to integrate Tasks from a user-chosen Task List from a self-hosted Nextcloud instance with a self-hosted Taiga instance.
+A Python Flask web application that integrates a Nextcloud Task List (CalDAV) with a Taiga project, keeping tasks in sync bidirectionally without requiring webhooks.
 
 ## Features
 
-- **Configuration UI:** Provide configuration interfaces with URLs, user IDs, and app passwords for both Nextcloud and Taiga. Also allows specifying the Taiga Project and User Story (US) ID.
-- **Sync Status Dashboard:** A separate web screen to check sync status and review detailed logs.
-- **Bi-directional Sync:** A background polling process runs every 30 seconds to fetch tasks from Nextcloud CalDAV and Taiga.
-  - *Nextcloud to Taiga:* New tasks created in Nextcloud (after configuration is saved) are synced and attached to the configured Taiga Project and US.
-  - *Taiga to Nextcloud:* When tasks are updated or closed in the Taiga Sprint Taskboard for the configured US, the title, description, and completion statuses are marked accordingly in Nextcloud.
+- **Configuration UI** — Set credentials for Nextcloud and Taiga, and map a Nextcloud Task List to a Taiga Project (optionally scoped to a specific User Story).
+- **Bidirectional Sync** — A background job polls every 30 seconds:
+  - *Nextcloud → Taiga:* New tasks, title/description edits, and completions are pushed to Taiga.
+  - *Taiga → Nextcloud:* New tasks, title/description edits, and completions are pushed to Nextcloud.
+  - *Deletion sync:* A task deleted on either side is removed from the other side automatically.
+- **Connection Retry** — On startup of each sync cycle, both Nextcloud and Taiga connections are tested with up to 3 retries (5 s apart). Each attempt is logged. Credentials are re-read from the database on every retry, so updating credentials in the UI takes effect immediately — even mid-retry.
+- **Live Status Badges** — Every page shows coloured pill badges for `Nextcloud: Connected / Unavailable` and `Taiga: Connected / Unavailable`, updated each sync cycle. Hovering shows the last-checked timestamp and any error detail.
+- **Sync Timing Badge** — A blue `↻ Xs ago · Ys` badge shows time since the last completed sync cycle and counts down to the next automatic page refresh.
+- **Auto Page Refresh** — The UI refreshes itself every 30 seconds (matching the sync interval) so the status badges and log table stay current without manual reloads.
+- **Sync Status Log** — The `/status` page shows the last 50 log entries with a one-click **Clear Logs** button.
+- **Health Check Endpoint** — `GET /healthz` returns `{"status": "ok"}`. Used by Docker for container health monitoring.
 
 ## Requirements
 
@@ -21,52 +27,74 @@ This is a Python Flask web application designed to integrate Tasks from a user-c
 ### Using Docker Compose (Recommended)
 
 1. Clone this repository.
-2. Open `docker-compose.yml` and optionally configure your global Nextcloud and Taiga credentials in the `environment` section.
-3. Build and start the container in the background:
+2. Open `docker-compose.yml` and configure your Nextcloud and Taiga credentials in the `environment` section, or leave them blank and enter them through the UI after startup.
+3. Build and start the container:
 
    ```bash
    docker compose up -d --build
    ```
 
-4. The application uses a local volume (`./instance`) to persist your SQLite database and Sync Connections across restarts.
-5. Open your web browser and navigate to `http://localhost:5001/config`.
+4. Open `http://localhost:5001/config` in your browser.
+
+The container uses a Gunicorn WSGI server (not the Flask dev server) for stability. A Docker `HEALTHCHECK` pings `/healthz` every 30 s; the container is marked healthy once the app is ready.
+
+The `./instance/` directory is mounted as a volume and holds the SQLite database, so your credentials and sync mappings survive container restarts and rebuilds.
 
 ### Running Locally (Without Docker)
 
 1. Clone this repository.
-2. Install the required Python packages:
+2. Install dependencies:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-3. Start the Flask application by running:
+3. Start the app:
 
    ```bash
    python app.py
    ```
 
-4. Open your web browser and navigate to `http://localhost:5001/config` to manage your connections.
+4. Open `http://localhost:5001/config`.
 
-## Configuration Details
+## Configuration
 
-### Nextcloud Setup
+### Nextcloud
 
-1. **Nextcloud CalDAV URL:** Usually formatted as `https://your-nextcloud-domain/remote.php/dav/`.
-2. **Nextcloud User ID:** Your username.
-3. **Nextcloud App Password:** Create a new App Password under Nextcloud Settings -> Security. Do not use your primary account password.
-4. **Nextcloud Task List Name:** The exact name of the Task List (e.g., `Personal`).
+| Field | Description |
+|---|---|
+| CalDAV URL | `https://your-nextcloud-domain/remote.php/dav/` |
+| User ID | Your Nextcloud username |
+| App Password | Create one under **Settings → Security → App passwords**. Do not use your main password. |
 
-### Taiga Setup
+### Taiga
 
-1. **Taiga API URL:** Usually formatted as `https://api.taiga.io` or your self-hosted URL.
-2. **Taiga Token / Credentials:** The Taiga API requires authentication. In many self-hosted Taiga instances, "Application Tokens" are managed by site administrators via the Django Admin panel. If you don't have an Application Token, you can also authenticate the app using your standard **Username and Password** or a standard **Auth Token**.
-   * *Note: The current app uses the `python-taiga` library. If using a standard username/password instead of a token, you may need to update the `get_taiga_api` function in `sync.py` to use `api.auth(username, password)` instead of `api.token`.*
-3. **Taiga Project Slug:** The slug found in your Taiga project's URL (e.g., `myusername-myprojectname`).
-4. **Taiga User Story Ref:** The integer ID of the User Story you want tasks assigned to (e.g., `12` for US #12).
+| Field | Description |
+|---|---|
+| API URL | `https://api.taiga.io` or your self-hosted URL |
+| Username / Email | Your Taiga login |
+| Password | Your Taiga password |
 
-### Sync Mechanism
+### Adding a Sync Connection
 
-The application utilizes background polling to communicate between Nextcloud and Taiga. It does **not** rely on Taiga Webhooks, completely bypassing local IP restriction errors common with self-hosted instances on the same server.
+1. Save your credentials on the **Configuration** page.
+2. Click **Add New Sync Connection**.
+3. **Step 1** — Choose the Nextcloud Task List and Taiga Project.
+4. **Step 2** — Optionally scope the sync to a specific Taiga User Story, or leave blank to sync all tasks in the project.
 
-The background job runs every 30 seconds to check for new tasks in Nextcloud and modified attributes (title, description, and completion status) for existing tasks in Taiga.
+## Sync Behaviour
+
+- The background job runs every **30 seconds**.
+- On the first run, existing tasks on both sides are matched by title to avoid duplicates.
+- Title, description, and completion status are kept in sync bidirectionally.
+- Deleting a task on one side removes the corresponding task on the other side on the next sync cycle.
+- The sync uses polling only — no webhooks are required. This avoids IP routing issues common with self-hosted instances on the same server.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Badges show `Unavailable` | Wrong credentials or service unreachable | Check URL and credentials on the Configuration page; the retry logic will recover automatically when the service comes back |
+| Tasks not syncing | No Sync Connection configured | Add one via **Add New Sync Connection** |
+| Duplicate tasks after DB reset | First-run deduplication by title | Clear the extra tasks manually; subsequent syncs will not re-create them |
+| Container unhealthy | App not yet ready | Wait for the 15 s start grace period to pass |

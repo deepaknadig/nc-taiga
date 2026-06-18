@@ -179,4 +179,5 @@ scheduler.add_job(func=run_sync_job, trigger="interval", seconds=30, max_instanc
 scheduler.start()
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001, host='0.0.0.0', use_reloader=False)
+    # Local dev only. Container deployments use gunicorn (see Dockerfile CMD).
+    app.run(debug=False, port=5001, host='0.0.0.0', use_reloader=False)

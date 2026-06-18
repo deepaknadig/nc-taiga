@@ -28,4 +28,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
          r = urllib.request.urlopen('http://localhost:5001/healthz', timeout=5); \
          sys.exit(0 if r.status == 200 else 1)"
 
-CMD ["python", "app.py"]
+# Single worker keeps APScheduler to one instance.
+# Timeout is set above the worst-case retry window (3 retries x 5s x 2 services = 30s).
+CMD ["gunicorn", "--workers", "1", "--threads", "2", "--bind", "0.0.0.0:5001", "--timeout", "120", "app:app"]
