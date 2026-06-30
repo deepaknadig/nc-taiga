@@ -67,10 +67,15 @@ def log_sync_status(status, message, connection_id=None):
 def get_caldav_client(config):
     if not config.nextcloud_url or not config.nextcloud_username or not config.nextcloud_app_password:
         raise ValueError("Nextcloud configuration is incomplete.")
+    # timeout=30: prevents CalDAV calls from hanging indefinitely when Nextcloud
+    # is unreachable (e.g. during backup). Without this, a hung job blocks the
+    # APScheduler (max_instances=1) from starting the next cycle, stalling sync
+    # for minutes until the OS-level TCP timeout fires.
     client = caldav.DAVClient(
         url=config.nextcloud_url,
         username=config.nextcloud_username,
-        password=config.nextcloud_app_password
+        password=config.nextcloud_app_password,
+        timeout=30
     )
     return client
 
@@ -181,12 +186,31 @@ def delete_nextcloud_task(config, connection, task_uid):
     if task_vobject:
         task_vobject.delete()
 
+class _TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
+    """HTTPAdapter that injects a default timeout on every request."""
+    def __init__(self, timeout=30, **kwargs):
+        self._default_timeout = timeout
+        super().__init__(**kwargs)
+
+    def send(self, *args, **kwargs):
+        kwargs.setdefault('timeout', self._default_timeout)
+        return super().send(*args, **kwargs)
+
+
 def get_taiga_api(config):
     if not config.taiga_url or not config.taiga_username or not config.taiga_password:
         raise ValueError("Taiga configuration is incomplete.")
 
     api = TaigaAPI(host=config.taiga_url)
     api.auth(username=config.taiga_username, password=config.taiga_password)
+    # Mount a timeout adapter so API calls fail fast if Taiga becomes unreachable,
+    # preventing the sync job from hanging and blocking the APScheduler.
+    try:
+        _adapter = _TimeoutHTTPAdapter(timeout=30)
+        api.raw.session.mount('http://', _adapter)
+        api.raw.session.mount('https://', _adapter)
+    except Exception:
+        pass
     return api
 
 def sync_nextcloud_to_taiga(app):
